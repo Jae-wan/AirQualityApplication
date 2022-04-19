@@ -6,6 +6,8 @@ import android.app.AlertDialog
 import android.content.DialogInterface
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Address
+import android.location.Geocoder
 import android.location.LocationManager
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
@@ -16,6 +18,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.airquality.databinding.ActivityMainBinding
+import java.io.IOException
+import java.lang.IllegalArgumentException
+import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
@@ -32,6 +37,8 @@ class MainActivity : AppCompatActivity() {
     // 위치 서비스 요청 시 필요한 Launcher (런쳐)
     lateinit var getGPSPermissionLauncher : ActivityResultLauncher<Intent>
 
+    lateinit var locationProvider : LocationProvider
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -39,13 +46,72 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         checkAllPermissions()
+        updateUI()
+    }
 
+    private fun updateUI() {
+        locationProvider = LocationProvider(this@MainActivity)
+
+        // 위도와 경도 정보 가져오기
+        val latitude : Double = locationProvider.getLocationLatitude()
+        val longitude : Double = locationProvider.getLocationLongitude()
+
+        if(latitude != 0.0 || longitude != 0.0) {
+            // 1. 현재 위치를 가져온 뒤 UI 업데이트
+                // 현재 위치를 가져오기
+            val address = getCurrentAddress(latitude, longitude)
+            // 주소가 null이 아닐 경우 UI 업데이트
+            address?.let {
+                binding.tvLocationTitle.text = "${it.thoroughfare}" // 예시 : 덕풍 3동
+                binding.tvLocationSubtitle.text = "${it.countryName} " +
+                        "${it.adminArea}" // 예 : 대한민국 경기도 하남시
+            }
+
+            // 2. 현재 미세먼지 농도 가져온 뒤 UI 업데이트
+
+        } else {
+            Toast.makeText(
+                this@MainActivity,
+                "위도, 경도의 정보를 가져올 수 없습니다. 새로고침을 눌러주세요.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+    // 지오코딩 (주소, 지명 <--> 위도, 경도)
+    fun getCurrentAddress(latitude: Double, longitude: Double) : Address? {
+        val geocoder = Geocoder(this, Locale.getDefault())
+        // Address 객체는 주소와 관련된 여러 정보를 가지고 있음.
+        // android.location.Address 패키지 참고
+        val addresses : List<Address>?
+
+        addresses = try { // GeoCoder 객체를 이용하여 위도와 경도로부터 리스트를 가져옴.
+            geocoder.getFromLocation(latitude, longitude, 7)
+        } catch (ioException: IOException) {
+            Toast.makeText(this, "지오코더 서비스 사용이 불가능합니다.",
+                Toast.LENGTH_LONG).show()
+            return null
+        } catch (illegalArgumentException: IllegalArgumentException) {
+            Toast.makeText(this, "잘못된 위도, 경도입니다.",
+                Toast.LENGTH_LONG).show()
+            return null
+        }
+
+        // 에러는 아니지만, 주소가 발견되지 않은 경우.
+        if (addresses == null || addresses.size == 0) {
+            Toast.makeText(this, "주소가 발견되지 않았습니다.",
+                Toast.LENGTH_LONG
+            ).show()
+            return null
+        }
+
+        val address: Address = addresses[0]
+        return address
     }
 
     private fun checkAllPermissions() {
-        if(!isLocationServicesAvailable()) {
+        if(!isLocationServicesAvailable()) { // 위치서비스가 켜져있는지 확인.
             showDialogForLocationServiceSetting();
-        } else {
+        } else { // 런타임 앱 권한이 모두 허용되어 있는지 확인.
             isRunTimePermissionGranted();
         }
     }
@@ -82,7 +148,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             if(checkResult) {
-                // 위치값을 가져올 수 있음.
+                updateUI()
             } else {
                 // 퍼미션이 거부되었다면 앱 종료
                 Toast.makeText(
@@ -166,6 +232,7 @@ class MainActivity : AppCompatActivity() {
         // builder.create()
         // builder.show() 합친거
     }
+
 }
 
 
