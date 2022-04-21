@@ -18,8 +18,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.airquality.databinding.ActivityMainBinding
+import com.example.airquality.retrofit.AirQualityResponse
+import com.example.airquality.retrofit.AirQualityService
+import com.example.airquality.retrofit.RetrofitConnection
+import retrofit2.Call
+import retrofit2.Callback
+import retrofit2.Response
 import java.io.IOException
 import java.lang.IllegalArgumentException
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.*
 
 class MainActivity : AppCompatActivity() {
@@ -47,6 +56,13 @@ class MainActivity : AppCompatActivity() {
 
         checkAllPermissions()
         updateUI()
+        setRefreshButton()
+    }
+
+    private fun setRefreshButton() {
+        binding.btnRefresh.setOnClickListener {
+            updateUI()
+        }
     }
 
     private fun updateUI() {
@@ -67,7 +83,8 @@ class MainActivity : AppCompatActivity() {
                         "${it.adminArea}" // 예 : 대한민국 경기도 하남시
             }
 
-            // 2. 현재 미세먼지 농도 가져온 뒤 UI 업데이트
+        getAirQualityData(latitude, longitude)
+        // 2. 현재 미세먼지 농도 가져온 뒤 UI 업데이트
 
         } else {
             Toast.makeText(
@@ -77,6 +94,74 @@ class MainActivity : AppCompatActivity() {
             ).show()
         }
     }
+
+    private fun getAirQualityData(latitude: Double, longitude: Double) {
+        // Retrofit 객체를 이용해 AirQualityService 인터페이스 구현체를 가져올 수 있음.
+        val retrofitAPI = RetrofitConnection.getInstance().create(AirQualityService::class.java)
+
+        retrofitAPI.getAirQualityData(
+            latitude.toString(),
+            longitude.toString(),
+            "bb822c2a-d90e-4970-8ab9-e6b7bcb15e18"
+        ).enqueue(object : Callback<AirQualityResponse> {
+            override fun onResponse(
+                call: Call<AirQualityResponse>,
+                response: Response<AirQualityResponse>
+            ) {
+                // 정상적인 Response가 왔다면 UI 업데이트
+                if(response.isSuccessful) {
+                    Toast.makeText(this@MainActivity,
+                                "최신 정보 업데이트 완료!",
+                                Toast.LENGTH_SHORT).show()
+                    response.body()?.let { updateAirUI(it) }
+                } else {
+                    Toast.makeText(this@MainActivity,
+                                "업데이트에 실패했습니다.",
+                                Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            override fun onFailure(call: Call<AirQualityResponse>,
+                                   t: Throwable) {
+                        t.printStackTrace()
+                Toast.makeText(this@MainActivity, "업데이트에 실패했습니다.",
+                Toast.LENGTH_SHORT).show()
+            }
+        })
+    }
+
+    private fun updateAirUI(airQualityData: AirQualityResponse) {
+        val pollutionData = airQualityData.data.current.pollution
+
+        binding.tvCount.text = pollutionData.aqius.toString()
+
+        val dateTime =
+            ZonedDateTime.parse(pollutionData.ts).withZoneSameInstant(
+                ZoneId.of("Asia/Seoul")).toLocalDateTime()
+        val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+
+        binding.tvCheckTime.text = dateTime.format(dateFormatter).toString()
+
+        when (pollutionData.aqius) {
+            in 0..50 -> {
+                binding.tvTitle.text = "좋음"
+                binding.imgBg.setImageResource(R.drawable.bg_good)
+            }
+            in 51..150 -> {
+                binding.tvTitle.text = "보통"
+                binding.imgBg.setImageResource(R.drawable.bg_soso)
+            }
+            in 151..200 -> {
+                binding.tvTitle.text = "나쁨"
+                binding.imgBg.setImageResource(R.drawable.bg_bad)
+            }
+            else -> {
+                binding.tvTitle.text = "매우 나쁨"
+                binding.imgBg.setImageResource(R.drawable.bg_worst)
+            }
+        }
+    }
+
     // 지오코딩 (주소, 지명 <--> 위도, 경도)
     fun getCurrentAddress(latitude: Double, longitude: Double) : Address? {
         val geocoder = Geocoder(this, Locale.getDefault())
